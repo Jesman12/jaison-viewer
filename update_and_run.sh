@@ -2,7 +2,7 @@
 
 # 📌 Configuración
 REPO_URL="https://github.com/Jesman12/jaison-viewer"  # Reemplaza con la URL de tu repo
-LOCAL_DIR="./"                                        # Directorio del script en la Raspberry Pi
+LOCAL_DIR="/home/jaison/jaison-viewer"                # Directorio del script en la Raspberry Pi
 VERSION_FILE="version.txt"                            # Archivo que indica la versión
 SCRIPT_NAME="reproductor.py"                          # Script principal
 
