@@ -183,25 +183,31 @@ start_time = pygame.time.get_ticks()
 
 # Bucle principal
 while running:
-    event = pygame.event.wait()
-    if event.type == pygame.QUIT:
-        running = False
-    elif event.type == pygame.KEYDOWN:
-        if event.key == pygame.K_ESCAPE:
+    # Procesar eventos
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             running = False
 
+    # Verificar si hay medios disponibles
     if has_valid_media():
         media_type, media, *extra = media_list[current_media_index]
         rule = extra[-1]
 
         if is_within_time_range(rule):
             screen.blit(scale_to_fit(media, screen_width, screen_height), (0, 0))
-            if pygame.time.get_ticks() - start_time >= 5000:
-                current_media_index = (current_media_index + 1) % len(media_list)
-                start_time = pygame.time.get_ticks()
 
+            # Calcular tiempo transcurrido
+            elapsed_time = (pygame.time.get_ticks() - start_time) / 1000  # Convertir a segundos
+            if elapsed_time >= 5:  # Cambiar cada 5 segundos
+                current_media_index = (current_media_index + 1) % len(media_list)
+                start_time = pygame.time.get_ticks()  # Reiniciar el temporizador
+                print(f"Cambiando a media {current_media_index} después de {elapsed_time:.1f} segundos")
+
+    # Actualizar la pantalla y controlar la tasa de actualización
     pygame.display.flip()
-    clock.tick(30)
+    clock.tick(30)  # Limitar a 30 FPS para un rendimiento estable
 
 pygame.quit()
 sys.exit()
