@@ -196,14 +196,29 @@ while running:
         rule = extra[-1]
 
         if is_within_time_range(rule):
-            screen.blit(scale_to_fit(media, screen_width, screen_height), (0, 0))
+            if media_type == 'image':
+                # Mostrar imagen
+                scaled_image = scale_to_fit(media, screen_width, screen_height)
+                screen.blit(scaled_image, (0, 0))
 
-            # Calcular tiempo transcurrido
-            elapsed_time = (pygame.time.get_ticks() - start_time) / 1000  # Convertir a segundos
-            if elapsed_time >= 5:  # Cambiar cada 5 segundos
-                current_media_index = (current_media_index + 1) % len(media_list)
-                start_time = pygame.time.get_ticks()  # Reiniciar el temporizador
-                print(f"Cambiando a media {current_media_index} después de {elapsed_time:.1f} segundos")
+                # Cambiar después de 5 segundos
+                if (pygame.time.get_ticks() - start_time) / 1000 >= 5:
+                    current_media_index = (current_media_index + 1) % len(media_list)
+                    start_time = pygame.time.get_ticks()
+            elif media_type == 'video':
+                # Mostrar video
+                ret, frame = media.read()
+                if ret:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame = np.rot90(frame)
+                    frame_surface = pygame.surfarray.make_surface(frame)
+                    scaled_frame = scale_to_fit(frame_surface, screen_width, screen_height)
+                    screen.blit(scaled_frame, (0, 0))
+                else:
+                    # Reiniciar video cuando termine
+                    media.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    current_media_index = (current_media_index + 1) % len(media_list)
+                    start_time = pygame.time.get_ticks()
 
     # Actualizar la pantalla y controlar la tasa de actualización
     pygame.display.flip()
