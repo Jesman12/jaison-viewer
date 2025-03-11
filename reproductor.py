@@ -209,26 +209,26 @@ while running:
     # Mostrar video
                 ret, frame = media.read()  # Leer un frame del video
                 if ret:
-        # Convertir el frame de OpenCV a una superficie de Pygame
+                    # Convertir el frame de OpenCV a una superficie de Pygame
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convertir de BGR a RGB
 
-        # Rotar el frame 90 grados en sentido horario (ajusta según sea necesario)
+                    # Rotar el frame 90 grados en sentido horario (ajusta según sea necesario)
                     frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
-        # Voltear el frame horizontalmente (ajusta según sea necesario)
-        frame = cv2.flip(frame, 1)
+                    # Voltear el frame horizontalmente (ajusta según sea necesario)
+                    frame = cv2.flip(frame, 1)
 
-        # Convertir el frame a una superficie de Pygame
-        frame_surface = pygame.surfarray.make_surface(frame)
+                    # Convertir el frame a una superficie de Pygame
+                    frame_surface = pygame.surfarray.make_surface(frame)
 
-        # Escalar el frame para que se ajuste a la pantalla
-        scaled_frame = scale_to_fit(frame_surface, screen_width, screen_height)
-        screen.blit(scaled_frame, (0, 0))
-    else:
-        # Reiniciar video cuando termine
-        media.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reiniciar el video al principio
-        current_media_index = (current_media_index + 1) % len(media_list)  # Cambiar al siguiente medio
-        start_time = pygame.time.get_ticks()  # Reiniciar el temporizador
+                    # Escalar el frame para que se ajuste a la pantalla
+                    scaled_frame = scale_to_fit(frame_surface, screen_width, screen_height)
+                    screen.blit(scaled_frame, (0, 0))
+                else:
+                    # Reiniciar video cuando termine
+                    media.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reiniciar el video al principio
+                    current_media_index = (current_media_index + 1) % len(media_list)  # Cambiar al siguiente medio
+                    start_time = pygame.time.get_ticks()  # Reiniciar el temporizador
 
     # Actualizar la pantalla y controlar la tasa de actualización
     pygame.display.flip()
