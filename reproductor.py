@@ -19,8 +19,14 @@ os.makedirs(MEDIA_DIR, exist_ok=True)
 
 # Inicializar pygame
 pygame.init()
-screen_width, screen_height = 800, 600
-screen = pygame.display.set_mode((screen_width, screen_height))
+
+# Obtener el tamaño de la pantalla del dispositivo
+screen_info = pygame.display.Info()
+screen_width, screen_height = screen_info.current_w, screen_info.current_h
+
+# Configurar pantalla completa
+screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN)
+
 clock = pygame.time.Clock()
 
 # URLs del servidor
@@ -297,7 +303,6 @@ while running:
     else:
         screen.fill((0, 0, 0)) 
 
-    # Actualizar la pantalla
     pygame.display.flip()
     clock.tick(30)
 pygame.quit()
