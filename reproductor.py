@@ -1,17 +1,16 @@
 import pygame
 import sys
-import requests
 import os
+import requests
 import json
-from io import BytesIO
-import cv2
-import numpy as np
 from datetime import datetime
 import time
 import pytz
 import threading
+import cv2
+import numpy as np
 
-# Crear carpeta de caché si no existe
+# Configuración inicial
 CACHE_DIR = "cache"
 MEDIA_DIR = os.path.join(CACHE_DIR, "media")
 CONFIG_FILE = os.path.join(CACHE_DIR, "config.json")
@@ -20,9 +19,8 @@ os.makedirs(MEDIA_DIR, exist_ok=True)
 
 # Inicializar pygame
 pygame.init()
-info = pygame.display.Info()
-screen_width, screen_height = info.current_w, info.current_h
-screen = pygame.display.set_mode((screen_width, screen_height), pygame.NOFRAME | pygame.FULLSCREEN)
+screen_width, screen_height = 800, 600
+screen = pygame.display.set_mode((screen_width, screen_height))
 clock = pygame.time.Clock()
 
 # URLs del servidor
@@ -35,44 +33,38 @@ media_list = []
 current_media_index = 0
 last_update_time = time.time()
 running = True
+media_lock = threading.Lock()
 
 # Zona horaria local
 local_timezone = pytz.timezone('America/Mexico_City')
 
 def internet_available():
-    """ Verifica si hay conexión a internet haciendo una petición a Google. """
+    """Verifica si hay conexión a internet."""
     try:
         requests.get("https://www.google.com", timeout=5)
         return True
     except requests.ConnectionError:
         return False
 
-def convert_to_local_time(server_time_str):
-    try:
-        server_time = datetime.strptime(server_time_str, '%Y-%m-%d %H:%M:%S')
-        server_time = pytz.utc.localize(server_time)
-        return server_time.astimezone(local_timezone)
-    except Exception:
-        return None
-
 def download_media():
-    """ Descarga los medios del servidor y los guarda en caché. """
+    """Descarga los medios del servidor y los guarda en caché."""
     global last_modified, media_list
-    headers = {'If-Modified-Since': last_modified} if last_modified else {}
 
+    headers = {'If-Modified-Since': last_modified} if last_modified else {}
     try:
         response = requests.get(json_url, headers=headers, timeout=5)
         if response.status_code == 304:
-            return  # No hay cambios
-
+            print("No hay cambios en los medios.")
+            return
         if response.status_code != 200:
             print(f"Error al descargar el JSON: {response.status_code}")
             return
 
-        data = response.json()
-        last_modified = data.get('last_modified', last_modified)
+        new_last_modified = response.headers.get('Last-Modified')
+        if new_last_modified:
+            last_modified = new_last_modified
 
-        # Guardar configuración en JSON local
+        data = response.json()
         with open(CONFIG_FILE, 'w') as f:
             json.dump(data, f)
 
@@ -84,33 +76,38 @@ def download_media():
 
             filename = os.path.join(MEDIA_DIR, os.path.basename(media_url))
             try:
-                if not os.path.exists(filename):  # Evitar descargar si ya existe
+                if not os.path.exists(filename):
                     media_response = requests.get(media_url, stream=True, timeout=5)
                     if media_response.status_code == 200:
                         with open(filename, 'wb') as f:
                             for chunk in media_response.iter_content(1024):
                                 f.write(chunk)
 
+                scaling_type = rule.get("escalado", "fit")  # Obtener el tipo de escalado
                 if filename.endswith(('.jpg', '.jpeg', '.png', '.webp')):
                     image = pygame.image.load(filename)
-                    new_media_list.append(('image', image, rule))
+                    new_media_list.append(('image', image, scaling_type, rule))
                 elif filename.endswith(('.mp4', '.avi', '.mov')):
                     video = cv2.VideoCapture(filename)
                     if not video.isOpened():
                         continue
                     video.set(cv2.CAP_PROP_BUFFERSIZE, 2)
                     fps = video.get(cv2.CAP_PROP_FPS) or 30
-                    new_media_list.append(('video', video, fps, rule))
+                    new_media_list.append(('video', video, fps, scaling_type, rule))
 
             except Exception as e:
                 print(f"Error al descargar {media_url}: {e}")
 
-        media_list = new_media_list
+        with media_lock:
+            if new_media_list != media_list:
+                media_list = new_media_list
+                print("Nuevos medios detectados. Lista actualizada.")
+
     except requests.RequestException as e:
         print(f"Error en la solicitud al servidor: {e}")
 
 def load_local_media():
-    """ Carga los medios desde la caché si no hay internet. """
+    """Carga los medios desde la caché si no hay internet."""
     global media_list
     if not os.path.exists(CONFIG_FILE):
         print("No hay datos almacenados en caché.")
@@ -125,21 +122,23 @@ def load_local_media():
         if not os.path.exists(filename):
             continue
 
+        scaling_type = rule.get("escalado", "fit") 
         if filename.endswith(('.jpg', '.jpeg', '.png', '.webp')):
             image = pygame.image.load(filename)
-            new_media_list.append(('image', image, rule))
+            new_media_list.append(('image', image, scaling_type, rule))
         elif filename.endswith(('.mp4', '.avi', '.mov')):
             video = cv2.VideoCapture(filename)
             if not video.isOpened():
                 continue
             video.set(cv2.CAP_PROP_BUFFERSIZE, 2)
             fps = video.get(cv2.CAP_PROP_FPS) or 30
-            new_media_list.append(('video', video, fps, rule))
+            new_media_list.append(('video', video, fps, scaling_type, rule))
 
-    media_list = new_media_list
+    with media_lock:
+        media_list = new_media_list
 
 def update_media():
-    """ Hilo en segundo plano para actualizar los medios cada 30 segundos si hay internet. """
+    """Hilo en segundo plano para actualizar los medios cada 30 segundos si hay internet."""
     global last_update_time
     while running:
         if time.time() - last_update_time >= 30:
@@ -150,30 +149,92 @@ def update_media():
             last_update_time = time.time()
         time.sleep(10)
 
-# Iniciar el hilo de actualización de medios
-threading.Thread(target=update_media, daemon=True).start()
+def scale_media(media, scaling_type, target_width, target_height):
+   
+    if isinstance(media, np.ndarray): 
+        media = pygame.surfarray.make_surface(cv2.cvtColor(media, cv2.COLOR_BGR2RGB))
+
+    if scaling_type == "original":
+        # Muestra la imagen en su tamaño original, centrada
+        return media, (target_width // 2 - media.get_width() // 2, target_height // 2 - media.get_height() // 2)
+    elif scaling_type == "escalado":
+        # Escala la imagen para llenar la pantalla, sin mantener la relación de aspecto
+        return pygame.transform.scale(media, (target_width, target_height)), (0, 0)
+    elif scaling_type == "fit":
+        # Escala la imagen para ajustarse al ancho o alto de la pantalla, manteniendo la relación de aspecto
+        aspect_ratio = media.get_width() / media.get_height()
+        if target_width / target_height > aspect_ratio:
+            new_height = target_height
+            new_width = int(new_height * aspect_ratio)
+        else:
+            new_width = target_width
+            new_height = int(new_width / aspect_ratio)
+        scaled_media = pygame.transform.scale(media, (new_width, new_height))
+        return scaled_media, ((target_width - new_width) // 2, (target_height - new_height) // 2)
+    elif scaling_type == "outfit":
+        # Escala la imagen para cubrir toda la pantalla, recortando los bordes si es necesario
+        aspect_ratio = media.get_width() / media.get_height()
+        if target_width / target_height > aspect_ratio:
+            new_width = target_width
+            new_height = int(new_width / aspect_ratio)
+        else:
+            new_height = target_height
+            new_width = int(new_height * aspect_ratio)
+        scaled_media = pygame.transform.scale(media, (new_width, new_height))
+        return scaled_media, ((target_width - new_width) // 2, (target_height - new_height) // 2)
+    else:
+        # Por defecto, usar "fit"
+        return scale_media(media, "fit", target_width, target_height)
+def draw_media():
+    """Dibuja el medio actual en la pantalla."""
+    with media_lock:
+        if not media_list:
+            return
+
+        media_type, media, scaling_type, rule = media_list[current_media_index]
+
+    if media_type == 'image':
+        scaled_media, pos = scale_media(media, scaling_type, screen_width, screen_height)
+        screen.blit(scaled_media, pos)
+    elif media_type == 'video':
+        ret, frame = media.read()
+        if ret:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = pygame.surfarray.make_surface(frame)
+            scaled_frame, pos = scale_media(frame, scaling_type, screen_width, screen_height)
+            screen.blit(scaled_frame, pos)
+        else:
+            media.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 def is_within_time_range(rule):
-    """ Verifica si la fecha/hora actual está dentro del rango permitido. """
+    """Verifica si la fecha/hora actual está dentro del rango permitido."""
     try:
         current_datetime = datetime.now()
         fecha_inicio = datetime.strptime(rule['fecha_inicio'], '%Y-%m-%d').date()
         fecha_fin = datetime.strptime(rule['fecha_fin'], '%Y-%m-%d').date()
         hora_inicio = datetime.strptime(rule['hora_inicio'], '%H:%M:%S').time()
         hora_fin = datetime.strptime(rule['hora_fin'], '%H:%M:%S').time()
-        return fecha_inicio <= current_datetime.date() <= fecha_fin and hora_inicio <= current_datetime.time() <= hora_fin
-    except Exception:
+
+        if fecha_inicio <= current_datetime.date() <= fecha_fin:
+            if hora_inicio <= current_datetime.time() <= hora_fin:
+                return True
+        return False
+    except Exception as e:
+        print(f"Error en is_within_time_range: {e}")
         return False
 
-def scale_to_fit(image, target_width, target_height):
-    """ Escala imágenes manteniendo la relación de aspecto. """
-    return pygame.transform.smoothscale(image, (target_width, target_height))
-
 def has_valid_media():
-    """ Verifica si hay medios válidos según la fecha/hora. """
-    return any(is_within_time_range(rule) for _, _, *extra in media_list for rule in [extra[-1]])
+    """Verifica si hay medios válidos según la fecha/hora."""
+    with media_lock:
+        for media in media_list:
+            media_type = media[0]  
+            rule = media[-1]       
+            if is_within_time_range(rule):
+                return True
+        return False
 
-# Cargar los medios según la disponibilidad de internet
+threading.Thread(target=update_media, daemon=True).start()
+
 if internet_available():
     download_media()
 else:
@@ -190,49 +251,54 @@ while running:
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             running = False
 
-    # Verificar si hay medios disponibles
+    screen.fill((0, 0, 0))  # Rellena la pantalla con color negro
+
     if has_valid_media():
-        media_type, media, *extra = media_list[current_media_index]
-        rule = extra[-1]
+        media = media_list[current_media_index]
+        media_type = media[0]  
+        rule = media[-1]       
 
         if is_within_time_range(rule):
             if media_type == 'image':
-                # Mostrar imagen
-                scaled_image = scale_to_fit(media, screen_width, screen_height)
-                screen.blit(scaled_image, (0, 0))
+                duracion = int(rule.get("duracion", 5)) 
 
-                # Cambiar después de 5 segundos
-                if (pygame.time.get_ticks() - start_time) / 1000 >= 5:
+                image = media[1]  
+                scaling_type = media[2] 
+                scaled_media, pos = scale_media(image, scaling_type, screen_width, screen_height)
+                screen.blit(scaled_media, pos)
+
+                if (pygame.time.get_ticks() - start_time) / 1000 >= duracion:
                     current_media_index = (current_media_index + 1) % len(media_list)
                     start_time = pygame.time.get_ticks()
             elif media_type == 'video':
-    # Mostrar video
-                ret, frame = media.read()  # Leer un frame del video
+                # Mostrar video
+                video = media[1]  
+                scaling_type = media[3]  
+                ret, frame = video.read()
                 if ret:
-                    # Convertir el frame de OpenCV a una superficie de Pygame
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convertir de BGR a RGB
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                    # Rotar el frame 90 grados en sentido horario (ajusta según sea necesario)
                     frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
-                    # Voltear el frame horizontalmente (ajusta según sea necesario)
                     frame = cv2.flip(frame, 1)
 
-                    # Convertir el frame a una superficie de Pygame
                     frame_surface = pygame.surfarray.make_surface(frame)
 
-                    # Escalar el frame para que se ajuste a la pantalla
-                    scaled_frame = scale_to_fit(frame_surface, screen_width, screen_height)
-                    screen.blit(scaled_frame, (0, 0))
+                    scaled_frame, pos = scale_media(frame_surface, scaling_type, screen_width, screen_height)
+
+                    screen.blit(scaled_frame, pos)
                 else:
-                    # Reiniciar video cuando termine
-                    media.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reiniciar el video al principio
-                    current_media_index = (current_media_index + 1) % len(media_list)  # Cambiar al siguiente medio
-                    start_time = pygame.time.get_ticks()  # Reiniciar el temporizador
+                    video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    current_media_index = (current_media_index + 1) % len(media_list)
+                    start_time = pygame.time.get_ticks()
+        else:
+            current_media_index = (current_media_index + 1) % len(media_list)
+            start_time = pygame.time.get_ticks()
+    else:
+        screen.fill((0, 0, 0)) 
 
-    # Actualizar la pantalla y controlar la tasa de actualización
+    # Actualizar la pantalla
     pygame.display.flip()
-    clock.tick(30)  # Limitar a 30 FPS para un rendimiento estable
-
+    clock.tick(30)
 pygame.quit()
 sys.exit()
