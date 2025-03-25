@@ -257,52 +257,83 @@ while running:
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             running = False
 
+    # Limpiar la pantalla en cada iteración
     screen.fill((0, 0, 0))  # Rellena la pantalla con color negro
 
+    # Verificar si hay medios disponibles
     if has_valid_media():
         media = media_list[current_media_index]
-        media_type = media[0]  
-        rule = media[-1]       
+        media_type = media[0]  # Tipo de medio ('image' o 'video')
+        rule = media[-1]       # La regla siempre es el último elemento
 
         if is_within_time_range(rule):
             if media_type == 'image':
-                duracion = int(rule.get("duracion", 5)) 
+                # Obtener la duración de la imagen desde el JSON
+                duracion = int(rule.get("duracion", 5))  # Valor predeterminado: 5 segundos
 
-                image = media[1]  
-                scaling_type = media[2] 
+                # Mostrar imagen
+                image = media[1]  # El segundo elemento es la imagen
+                scaling_type = media[2]  # El tercer elemento es el tipo de escalado
                 scaled_media, pos = scale_media(image, scaling_type, screen_width, screen_height)
+
+                x = int(rule.get("x", 0))  # Valor predeterminado: 0
+                y = int(rule.get("y", 0))  # Valor predeterminado: 0
+
+                # Aplicar las coordenadas x e y
+                pos = (pos[0] + x, pos[1] + y)
+
+                # Dibujar la imagen en la pantalla
                 screen.blit(scaled_media, pos)
 
+                # Cambiar después de la duración especificada
                 if (pygame.time.get_ticks() - start_time) / 1000 >= duracion:
                     current_media_index = (current_media_index + 1) % len(media_list)
                     start_time = pygame.time.get_ticks()
             elif media_type == 'video':
                 # Mostrar video
-                video = media[1]  
-                scaling_type = media[3]  
+                video = media[1]  # El segundo elemento es el video
+                scaling_type = media[3]  # El cuarto elemento es el tipo de escalado
+
                 ret, frame = video.read()
                 if ret:
+                    # Convertir el frame de BGR a RGB (OpenCV usa BGR por defecto)
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
+                    # Rotar el frame 90 grados en sentido horario (ajusta según sea necesario)
                     frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
+                    # Voltear el frame horizontalmente (ajusta según sea necesario)
                     frame = cv2.flip(frame, 1)
 
+                    # Convertir el frame a una superficie de Pygame
                     frame_surface = pygame.surfarray.make_surface(frame)
 
+                    # Escalar el frame según el tipo de escalado
                     scaled_frame, pos = scale_media(frame_surface, scaling_type, screen_width, screen_height)
 
+                    # Obtener las coordenadas x e y desde el JSON
+                    x = int(rule.get("x", 0))  # Valor predeterminado: 0
+                    y = int(rule.get("y", 0))  # Valor predeterminado: 0
+
+                    # Aplicar las coordenadas x e y
+                    pos = (pos[0] + x, pos[1] + y)
+
+                    # Dibujar el frame en la pantalla
                     screen.blit(scaled_frame, pos)
                 else:
+                    # Reiniciar el video cuando termine
                     video.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     current_media_index = (current_media_index + 1) % len(media_list)
                     start_time = pygame.time.get_ticks()
         else:
+            # Si el medio actual ya no está dentro del rango de tiempo, avanzar al siguiente medio
             current_media_index = (current_media_index + 1) % len(media_list)
             start_time = pygame.time.get_ticks()
     else:
-        screen.fill((0, 0, 0)) 
+        # Si no hay medios válidos, limpiar la pantalla
+        screen.fill((0, 0, 0))  # Rellena la pantalla con color negro
 
+    # Actualizar la pantalla
     pygame.display.flip()
     clock.tick(30)
 pygame.quit()
