@@ -38,12 +38,13 @@ class MediaPlayer:
         self.interrupt_rule_id = None
         self.interrupt_lock = threading.Lock()
         self.socket_port = 8080
-    
+        
     def init_pygame(self):
-        pygame.init()
-        self.screen_width, self.screen_height = 800, 600
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        self.clock = pygame.time.Clock()
+         """Inicializa pygame y configura la pantalla en modo fullscreen."""
+         pygame.init()
+         self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+         self.screen_width, self.screen_height = self.screen.get_size()
+         self.clock = pygame.time.Clock()
     
     def handle_socket_connections(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -119,13 +120,20 @@ class MediaPlayer:
                 scaling_type = rule.get("escalado", "fit")
                 media_item = self.create_media_item(filename, scaling_type, rule)
                 if media_item:
-                    new_media_list.append(media_item)
+                    # Verificar si ya existe un medio con la misma fuente para actualizarlo
+                    existing_index = next((i for i, m in enumerate(self.media_list) 
+                                        if len(m) > 3 and m[3].get('src') == rule.get('src')), None)
+                    if existing_index is not None:
+                        self.media_list[existing_index] = media_item
+                    else:
+                        new_media_list.append(media_item)
 
             with self.media_lock:
-                if new_media_list != self.media_list:
-                    self.media_list = new_media_list
-                    self.current_media_index = 0
-                    self.start_time = pygame.time.get_ticks()
+                # Agregar solo los nuevos medios que no existían antes
+                existing_srcs = [m[3].get('src') for m in self.media_list if len(m) > 3]
+                for media in new_media_list:
+                    if len(media) > 3 and media[3].get('src') not in existing_srcs:
+                        self.media_list.append(media)
 
         except requests.RequestException:
             pass
@@ -186,15 +194,22 @@ class MediaPlayer:
                     data = response.json()
                     
                     with self.media_lock:
-                        for media in self.media_list:
+                        for i, media in enumerate(self.media_list):
                             for rule in data.get('data', []):
                                 if rule.get('src') in media[-1].get('src', ''):
+                                    # Actualiza coordenadas
                                     media[-1]["x"] = rule.get("x", "0")
                                     media[-1]["y"] = rule.get("y", "0")
+                                    # Actualiza el tipo de escalado si ha cambiado
+                                    if len(media) > 2:  # Asegurarnos que tenemos el campo de escalado
+                                        new_scaling = rule.get("escalado", "fit")
+                                        if media[2] != new_scaling:
+                                            # Actualizamos el tipo de escalado en el elemento multimedia
+                                            self.media_list[i] = (media[0], media[1], new_scaling, media[3])
                 time.sleep(10)
             except Exception:
                 pass
-    
+        
     def scale_media(self, media, scaling_type, json_x=0, json_y=0):
         media_width, media_height = media.get_size()
         target_width, target_height = self.screen_width, self.screen_height
@@ -306,30 +321,31 @@ class MediaPlayer:
                     should_advance = False
                     media = self.media_list[self.current_media_index]
                     media_type, *media_data, rule = media
-
+                    
                     if not self.is_within_time_range(rule):
                         should_advance = True
                     else:
                         json_x = rule.get("x", "0")
                         json_y = rule.get("y", "0")
-
+                        scaling_type = media_data[1]  # El tipo de escalado está en la posición 1 de media_data
+                        
                         if media_type == 'image':
                             try:
-                                scaled, pos = self.scale_media(media_data[0], media_data[1], json_x, json_y)
+                                scaled, pos = self.scale_media(media_data[0], scaling_type, json_x, json_y)
                                 self.screen.blit(scaled, pos)
                                 
                                 if self.should_switch_media(rule):
                                     should_advance = True
                             except Exception:
                                 should_advance = True
-
+                                
                         elif media_type == 'video':
                             try:
                                 if len(media_data) >= 2:
                                     video_capture = media_data[0]
                                     frame = self.process_video_frame(video_capture)
                                     if frame:
-                                        scaled, pos = self.scale_media(frame, media_data[1], json_x, json_y)
+                                        scaled, pos = self.scale_media(frame, scaling_type, json_x, json_y)
                                         self.screen.blit(scaled, pos)
                                     else:
                                         video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -338,11 +354,11 @@ class MediaPlayer:
                                     should_advance = True
                             except Exception:
                                 should_advance = True
-
+                                
                     if should_advance:
                         self.current_media_index = (self.current_media_index + 1) % media_count
                         self.start_time = pygame.time.get_ticks()
-                
+            
             pygame.display.flip()
             self.clock.tick(FPS)
 
