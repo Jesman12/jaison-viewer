@@ -21,7 +21,7 @@ UPDATE_INTERVAL = 30
 CONNECTION_TIMEOUT = 5
 DEFAULT_DURATION = 5
 FPS = 30
-JSON_URL = 'https://api.jaison.mx/raspi/api.php?action=listarImagenes'
+JSON_URL = 'https://api.jaison.mx/raspi/api.php?action=listarImagenesDevice&idDevice=3'
 BASE_URL = 'http://api.jaison.mx/'
 LOCAL_TIMEZONE = pytz.timezone('America/Mexico_City')
 
@@ -40,11 +40,13 @@ class MediaPlayer:
         self.socket_port = 8080
         
     def init_pygame(self):
-         """Inicializa pygame y configura la pantalla en modo fullscreen."""
-         pygame.init()
-         self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-         self.screen_width, self.screen_height = self.screen.get_size()
-         self.clock = pygame.time.Clock()
+          """Inicializa pygame y configura la pantalla en modo fullscreen."""
+          pygame.init()
+          self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+          self.screen_width, self.screen_height = self.screen.get_size()
+          self.clock = pygame.time.Clock()
+
+    
     
     def handle_socket_connections(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -200,6 +202,9 @@ class MediaPlayer:
                                     # Actualiza coordenadas
                                     media[-1]["x"] = rule.get("x", "0")
                                     media[-1]["y"] = rule.get("y", "0")
+                                    # Actualiza fechas
+                                    media[-1]["fecha_inicio"] = rule.get("fecha_inicio", "")
+                                    media[-1]["fecha_fin"] = rule.get("fecha_fin", "")
                                     # Actualiza el tipo de escalado si ha cambiado
                                     if len(media) > 2:  # Asegurarnos que tenemos el campo de escalado
                                         new_scaling = rule.get("escalado", "fit")
@@ -207,8 +212,9 @@ class MediaPlayer:
                                             # Actualizamos el tipo de escalado en el elemento multimedia
                                             self.media_list[i] = (media[0], media[1], new_scaling, media[3])
                 time.sleep(10)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Error en update_coordinates: {str(e)}")
+                time.sleep(10)
         
     def scale_media(self, media, scaling_type, json_x=0, json_y=0):
         media_width, media_height = media.get_size()
