@@ -50,7 +50,7 @@ class MediaPlayer:
 
         self.wifi_mac = self.get_mac(wifi_iface)
         self.ethernet_mac = self.get_mac(eth_iface)
-        self.current_mac = (self.ethernet_mac or self.wifi_mac or "00:00:00:00:00:00").replace(':', '')
+        self.current_mac = (self.ethernet_mac or self.wifi_mac or "00:00:00:00:00:00")
         
         print(f"Sistema operativo: {platform.system()}")
         print(f"MAC Ethernet ({eth_iface}): {self.ethernet_mac}")
@@ -59,17 +59,17 @@ class MediaPlayer:
         print(f"URL de API: https://api.jaison.mx/raspi/api.php?action=listarImagenesDevice&eth0={self.current_mac}")
 
         
-    # def init_pygame(self):
-    #        """Inicializa pygame y configura la pantalla en modo fullscreen."""
-    #        pygame.init()
-    #        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-    #        self.screen_width, self.screen_height = self.screen.get_size()
-    #        self.clock = pygame.time.Clock()
     def init_pygame(self):
-         pygame.init()
-         self.screen_width, self.screen_height = 800, 600
-         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-         self.clock = pygame.time.Clock()
+            """Inicializa pygame y configura la pantalla en modo fullscreen."""
+            pygame.init()
+            self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            self.screen_width, self.screen_height = self.screen.get_size()
+            self.clock = pygame.time.Clock()
+    # def init_pygame(self):
+    #      pygame.init()
+    #      self.screen_width, self.screen_height = 800, 600
+    #      self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+    #      self.clock = pygame.time.Clock()
 
     
     def get_mac(self, interface):
@@ -156,7 +156,7 @@ class MediaPlayer:
     def download_media(self):
         headers = {'If-Modified-Since': self.last_modified} if self.last_modified else {}
     
-        json_url = f'https://api.jaison.mx/raspi/api.php?action=listarImagenesDevice&eth0={self.current_mac}'
+        json_url = f'{JSON_URL}={self.current_mac}'
         
         try:
             response = requests.get(json_url, headers=headers, timeout=CONNECTION_TIMEOUT)
