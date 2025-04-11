@@ -24,7 +24,7 @@ UPDATE_INTERVAL = 30
 CONNECTION_TIMEOUT = 5
 DEFAULT_DURATION = 5
 FPS = 30
-JSON_URL = 'https://api.jaison.mx/raspi/api.php?action=listarImagenes'
+JSON_URL = 'https://api.jaison.mx/raspi/api.php?action=listarImagenesDevice&eth0='
 BASE_URL = 'http://api.jaison.mx/'
 LOCAL_TIMEZONE = pytz.timezone('America/Mexico_City')
 
@@ -56,7 +56,7 @@ class MediaPlayer:
         print(f"MAC Ethernet ({eth_iface}): {self.ethernet_mac}")
         print(f"MAC Wi-Fi ({wifi_iface}): {self.wifi_mac}")
         print(f"MAC seleccionada: {self.current_mac}")
-        print(f"URL de API: https://api.jaison.mx/raspi/api.php?action=listarImagenesDevice&eth0={self.current_mac}")
+        print(f"URL de API: {JSON_URL}{self.current_mac}")
 
         
     def init_pygame(self):
