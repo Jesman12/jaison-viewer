@@ -10,6 +10,7 @@ import threading
 import cv2
 import numpy as np
 import socket
+import subprocess
 
 # Configuración inicial
 CACHE_DIR = "cache"
@@ -21,7 +22,7 @@ UPDATE_INTERVAL = 30
 CONNECTION_TIMEOUT = 5
 DEFAULT_DURATION = 5
 FPS = 30
-JSON_URL = 'https://api.jaison.mx/raspi/api.php?action=listarImagenesDevice&idDevice=3'
+JSON_URL = 'https://api.jaison.mx/raspi/api.php?action=listarImagenesDevice&idDevice=1'
 BASE_URL = 'http://api.jaison.mx/'
 LOCAL_TIMEZONE = pytz.timezone('America/Mexico_City')
 
@@ -39,14 +40,19 @@ class MediaPlayer:
         self.interrupt_lock = threading.Lock()
         self.socket_port = 8080
         
-    def init_pygame(self):
-          """Inicializa pygame y configura la pantalla en modo fullscreen."""
-          pygame.init()
-          self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-          self.screen_width, self.screen_height = self.screen.get_size()
-          self.clock = pygame.time.Clock()
+    # def init_pygame(self):
+    #      """Inicializa pygame y configura la pantalla en modo fullscreen."""
+    #      pygame.init()
+    #      self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    #      self.screen_width, self.screen_height = self.screen.get_size()
+    #      self.clock = pygame.time.Clock()
 
-    
+    def init_pygame(self):
+         """Inicializa pygame y configura la pantalla."""
+         pygame.init()
+         self.screen_width, self.screen_height = 800, 600
+         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+         self.clock = pygame.time.Clock()
     
     def handle_socket_connections(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -178,19 +184,57 @@ class MediaPlayer:
         except Exception:
             return None
     
-    def update_media(self):
-        while self.running:
-            if time.time() - self.last_update_time >= UPDATE_INTERVAL:
-                if self.internet_available():
-                    self.download_media()
-                else:
-                    self.load_local_media()
-                self.last_update_time = time.time()
-            time.sleep(10)
-    
-    def update_coordinates(self):
+    def update_media_and_coordinates(self):
         while self.running:
             try:
+                if time.time() - self.last_update_time >= UPDATE_INTERVAL:
+                    if self.internet_available():
+                        headers = {'If-Modified-Since': self.last_modified} if self.last_modified else {}
+                        response = requests.get(JSON_URL, headers=headers, timeout=CONNECTION_TIMEOUT)
+
+                        if response.status_code == 200:
+                            self.last_modified = response.headers.get('Last-Modified', self.last_modified)
+                            data = response.json()
+                            
+                            # Guarda la configuración localmente
+                            with open(CONFIG_FILE, 'w') as f:
+                                json.dump(data, f)
+                            
+                            # Procesa la descarga de medios nuevos
+                            new_media_list = []
+                            for rule in data.get('data', []):
+                                if 'src' not in rule:
+                                    continue
+                                    
+                                media_url = f"{BASE_URL}{rule.get('src', '')}"
+                                if not media_url:
+                                    continue
+
+                                filename = os.path.join(MEDIA_DIR, os.path.basename(media_url))
+                                if not os.path.exists(filename):
+                                    if not self.download_file(media_url, filename):
+                                        continue
+
+                                scaling_type = rule.get("escalado", "fit")
+                                media_item = self.create_media_item(filename, scaling_type, rule)
+                                if media_item:
+                                    existing_index = next((i for i, m in enumerate(self.media_list) 
+                                                        if len(m) > 3 and m[3].get('src') == rule.get('src')), None)
+                                    if existing_index is not None:
+                                        self.media_list[existing_index] = media_item
+                                    else:
+                                        new_media_list.append(media_item)
+
+                            with self.media_lock:
+                                existing_srcs = [m[3].get('src') for m in self.media_list if len(m) > 3]
+                                for media in new_media_list:
+                                    if len(media) > 3 and media[3].get('src') not in existing_srcs:
+                                        self.media_list.append(media)
+                    else:
+                        self.load_local_media()
+                    
+                    self.last_update_time = time.time()
+                
                 response = requests.get(JSON_URL, timeout=CONNECTION_TIMEOUT)
                 if response.status_code == 200:
                     data = response.json()
@@ -202,18 +246,19 @@ class MediaPlayer:
                                     # Actualiza coordenadas
                                     media[-1]["x"] = rule.get("x", "0")
                                     media[-1]["y"] = rule.get("y", "0")
-                                    # Actualiza fechas
+                                    # Actualiza fechas y horas
                                     media[-1]["fecha_inicio"] = rule.get("fecha_inicio", "")
                                     media[-1]["fecha_fin"] = rule.get("fecha_fin", "")
                                     # Actualiza el tipo de escalado si ha cambiado
-                                    if len(media) > 2:  # Asegurarnos que tenemos el campo de escalado
+                                    if len(media) > 2:
                                         new_scaling = rule.get("escalado", "fit")
                                         if media[2] != new_scaling:
-                                            # Actualizamos el tipo de escalado en el elemento multimedia
                                             self.media_list[i] = (media[0], media[1], new_scaling, media[3])
-                time.sleep(10)
+                
+                time.sleep(10)  
+                
             except Exception as e:
-                print(f"Error en update_coordinates: {str(e)}")
+                print(f"Error en update_media_and_coordinates: {str(e)}")
                 time.sleep(10)
         
     def scale_media(self, media, scaling_type, json_x=0, json_y=0):
@@ -299,8 +344,7 @@ class MediaPlayer:
         return (pygame.time.get_ticks() - self.start_time) / 1000 >= duration
     
     def run(self):
-        threading.Thread(target=self.update_media, daemon=True).start()
-        threading.Thread(target=self.update_coordinates, daemon=True).start()
+        threading.Thread(target=self.update_media_and_coordinates, daemon=True).start()
         threading.Thread(target=self.handle_socket_connections, daemon=True).start()
 
         while self.running:
@@ -333,8 +377,7 @@ class MediaPlayer:
                     else:
                         json_x = rule.get("x", "0")
                         json_y = rule.get("y", "0")
-                        scaling_type = media_data[1]  # El tipo de escalado está en la posición 1 de media_data
-                        
+                        scaling_type = media_data[1]                          
                         if media_type == 'image':
                             try:
                                 scaled, pos = self.scale_media(media_data[0], scaling_type, json_x, json_y)
